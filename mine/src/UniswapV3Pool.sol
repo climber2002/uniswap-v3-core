@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import "./lib/Tick.sol";
+import "./lib/TickMath.sol";
 
 contract UniswapV3Pool {
   address public immutable token0;
@@ -44,7 +45,6 @@ contract UniswapV3Pool {
       slot0.unlocked = true;
   }
 
-
   constructor(
     address _token0,
     address _token1,
@@ -55,5 +55,23 @@ contract UniswapV3Pool {
     tickSpacing = _tickSpacing;
 
     maxLiquidityPerTick = Tick.tickSpacingToMaxLiquidityPerTick(_tickSpacing);
+  }
+
+  function initialize(uint160 sqrtPriceX96) external {
+    require(slot0.sqrtPriceX96 == 0, 'Already initialized');
+    int24 tick = TickMath.getTickAtSqrtRatio(sqrtPriceX96);
+    // TODO: update later
+    uint16 cardinality = 0;
+    uint16 cardinalityNext = 0;
+
+    slot0 = Slot0({
+      sqrtPriceX96: sqrtPriceX96,
+      tick: tick,
+      observationIndex: 0,
+      observationCardinality: cardinality,
+      observationCardinalityNext: cardinalityNext,
+      feeProtocol: 0,
+      unlocked: true
+    });
   }
 }
