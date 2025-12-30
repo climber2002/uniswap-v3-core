@@ -1,11 +1,14 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import "./lib/Tick.sol";
+
 contract UniswapV3Pool {
   address public immutable token0;
   address public immutable token1;
   int24 public immutable tickSpacing;
   uint24 public immutable fee;
+  uint128 public immutable maxLiquidityPerTick;
 
 
   constructor(
@@ -16,5 +19,7 @@ contract UniswapV3Pool {
     token0 = _token0;
     token1 = _token1;
     tickSpacing = _tickSpacing;
+
+    maxLiquidityPerTick = Tick.tickSpacingToMaxLiquidityPerTick(_tickSpacing);
   }
 }
