@@ -7,13 +7,14 @@ import {UniswapV3Pool} from "../src/UniswapV3Pool.sol";
 contract UniswapV3PoolTest is Test {
     UniswapV3Pool public pool;
 
-    function testConstructorSetsTokens() public {
+    function testConstructor() public {
         address token0 = address(0x1);
         address token1 = address(0x2);
 
-        pool = new UniswapV3Pool(token0, token1);
+        pool = new UniswapV3Pool(token0, token1, 2);
 
         assertEq(pool.token0(), token0);
         assertEq(pool.token1(), token1);
+        assertEq(pool.tickSpacing(), 2);
     }
 }
