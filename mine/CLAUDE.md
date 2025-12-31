@@ -16,6 +16,10 @@ This is a personal learning project to deeply understand Uniswap V3 by implement
 - Foundry (forge, anvil, cast)
 - Solidity
 
+## Development Guidelines
+
+When questions arise about Uniswap V3 implementation details, always reference the original code in the parent folder (`../contracts/`) to ensure accuracy and consistency with the official implementation.
+
 ## Progress
 
 _Implementation progress will be tracked here as features are built._
