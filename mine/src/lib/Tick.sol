@@ -69,4 +69,11 @@ library Tick {
             ? int128(int256(info.liquidityNet) - int256(liquidityDelta))
             : int128(int256(info.liquidityNet) + int256(liquidityDelta));
   }
+
+  /// @notice Clears tick data
+  /// @param self The mapping containing all initialized tick information for initialized ticks
+  /// @param tick The tick that will be cleared
+  function clear(mapping(int24 => Tick.Info) storage self, int24 tick) internal {
+      delete self[tick];
+  }
 }

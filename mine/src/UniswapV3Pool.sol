@@ -217,7 +217,15 @@ contract UniswapV3Pool {
 
       // TODO: update feeGrowthInside0X128 position
 
-      // TODO: clear any tick data if no longer needed
+      // clear any tick data if no longer needed
+      if (liquidityDelta < 0) {
+        if (flippedLower) {
+          ticks.clear(tickLower);
+        }
+        if (flippedUpper) {
+          ticks.clear(tickUpper);
+        }
+      }
     }
 
     position.update(liquidityDelta);
@@ -247,6 +255,53 @@ contract UniswapV3Pool {
     }
     if (amount1 > 0) {
       IERC20(token1).transferFrom(msg.sender, address(this), amount1);
+    }
+  }
+
+  function burn(
+    int24 tickLower,
+    int24 tickUpper,
+    uint128 amount
+  ) external lock returns (uint256 amount0, uint256 amount1) {
+    (Position.Info storage position, int256 amount0Int, int256 amount1Int) = 
+      _modifyPosition(ModifyPositionParams({
+        owner: msg.sender,
+        tickLower: tickLower,
+        tickUpper: tickUpper,
+        liquidityDelta: int128(-int256(uint256(amount)))
+      }));
+
+    amount0 = uint256(-amount0Int);
+    amount1 = uint256(-amount1Int);
+
+    if (amount0 > 0 || amount1 > 0) {
+      (position.tokensOwed0, position.tokensOwed1) = (
+        position.tokensOwed0 + uint128(amount0),
+        position.tokensOwed1 + uint128(amount1)
+      );
+    }
+  }
+
+  function collect(
+    address recipient,
+    int24 tickLower,
+    int24 tickUpper,
+    uint128 amount0Requested,
+    uint128 amount1Requested
+  ) external lock returns (uint128 amount0, uint128 amount1) {
+    // we don't need to checkTicks here, because invalid positions will never have non-zero tokensOwed{0,1}
+    Position.Info storage position = positions.get(msg.sender, tickLower, tickUpper);
+
+    amount0 = amount0Requested > position.tokensOwed0 ? position.tokensOwed0 : amount0Requested;
+    amount1 = amount1Requested > position.tokensOwed1 ? position.tokensOwed1 : amount1Requested;
+
+    if (amount0 > 0) {
+      position.tokensOwed0 -= amount0;
+      IERC20(token0).transfer(recipient, amount0);
+    }
+    if (amount1 > 0) {
+      position.tokensOwed1 -= amount1;
+      IERC20(token1).transfer(recipient, amount1);
     }
   }
 }

@@ -8,13 +8,16 @@ This is a personal learning project to deeply understand Uniswap V3 by implement
 
 ## Planned Features
 
-- [ ] Add Position (Liquidity Provision)
+- [x] Initialize Pool
+- [x] Mint Position (Add Liquidity)
+- [x] Burn Position (Remove Liquidity)
+- [x] Collect (Withdraw Tokens)
 - [ ] Swap Functionality
 
 ## Tech Stack
 
 - Foundry (forge, anvil, cast)
-- Solidity
+- Solidity 0.8.24
 
 ## Development Guidelines
 
@@ -22,4 +25,33 @@ When questions arise about Uniswap V3 implementation details, always reference t
 
 ## Progress
 
-_Implementation progress will be tracked here as features are built._
+### Completed
+- ✅ **Pool Initialization**: Implemented `initialize()` to set initial price and tick
+- ✅ **Mint Functionality**: Implemented `mint()` to add liquidity positions
+  - Position tracking with `Position.Info` struct
+  - Tick updates with `Tick.Info` struct
+  - Amount calculations using `SqrtPriceMath`
+  - Support for in-range and out-of-range positions
+  - Comprehensive test suite (12 tests passing)
+- ✅ **Burn Functionality**: Implemented `burn()` to remove liquidity from positions
+  - Updates position liquidity via `_modifyPosition`
+  - Calculates token amounts owed to user
+  - Stores owed amounts in `position.tokensOwed0/1`
+- ✅ **Collect Functionality**: Implemented `collect()` to withdraw owed tokens
+  - Transfers accumulated tokens to recipient
+  - Updates position's tokensOwed balances
+  - Follows CEI pattern for security
+
+### Libraries Implemented
+- `TickMath`: Tick/price conversions
+- `SqrtPriceMath`: Liquidity amount calculations
+- `LiquidityMath`: Safe liquidity delta operations
+- `FullMath`: 512-bit math operations
+- `UnsafeMath`: Optimized math operations
+- `FixedPoint96`: Q64.96 fixed-point constants
+- `Tick`: Tick state management
+- `Position`: Position state management
+
+### Next Steps
+- Add tests for `burn()` and `collect()` functions
+- Implement swap functionality
