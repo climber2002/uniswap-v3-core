@@ -52,6 +52,12 @@ When questions arise about Uniswap V3 implementation details, always reference t
 - `Tick`: Tick state management
 - `Position`: Position state management
 
+### Test Coverage
+- ✅ **Initialize Tests**: 4 tests covering initialization logic
+- ✅ **Mint Tests**: 12 tests covering all mint scenarios
+- ✅ **Burn Tests**: 11 tests covering liquidity removal, tick clearing, and tokensOwed tracking
+- ✅ **Collect Tests**: 8 tests covering token withdrawal and multiple collection scenarios
+- **Total**: 36 tests passing
+
 ### Next Steps
-- Add tests for `burn()` and `collect()` functions
 - Implement swap functionality
