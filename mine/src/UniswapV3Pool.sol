@@ -7,11 +7,16 @@ import "./lib/Position.sol";
 import "./lib/LiquidityMath.sol";
 import "./interfaces/IERC20.sol";
 import "./lib/SqrtPriceMath.sol";
+import "./lib/TickBitmap.sol";
+import "./lib/SwapMath.sol";
+import "./lib/FixedPoint128.sol";
+import "./lib/FullMath.sol";
 
 contract UniswapV3Pool {
   using Position for mapping(bytes32 => Position.Info);
   using Position for Position.Info;
   using Tick for mapping(int24 => Tick.Info);
+  using TickBitmap for mapping(int16 => uint256);
 
   address public immutable token0;
   address public immutable token1;
@@ -52,6 +57,8 @@ contract UniswapV3Pool {
 
   // mapping of tick => Tick.Info
   mapping(int24 => Tick.Info) public ticks;
+
+  mapping(int16 => uint256) public tickBitmap;
 
   // mapping of encoding of owner + tickLower + tickUpper => Position.Info
   mapping(bytes32 => Position.Info) public positions;
@@ -133,7 +140,6 @@ contract UniswapV3Pool {
       _slot0.tick
     );
 
-    // TODO: Calculate amount0 and amount1
     if (params.liquidityDelta != 0) {
       if (_slot0.tick < params.tickLower) {
         // current tick is below the passed range; liquidity can only become in range by crossing from left to
@@ -144,6 +150,13 @@ contract UniswapV3Pool {
             params.liquidityDelta
         );
       } else if (_slot0.tick < params.tickUpper) {
+        // Position is IN RANGE: tickLower <= tick < tickUpper
+        // This creates LEFT-INCLUSIVE, RIGHT-EXCLUSIVE behavior:
+        // - First condition failed (tick >= tickLower) → includes lower boundary
+        // - This condition true (tick < tickUpper) → excludes upper boundary
+        // Therefore: position is active when tickLower <= tick < tickUpper
+        // UPDATE pool.liquidity because position contributes to current price range!
+
         // current tick is inside the passed range
         uint128 liquidityBefore = liquidity; // SLOAD for gas optimization
 
@@ -303,5 +316,211 @@ contract UniswapV3Pool {
       position.tokensOwed1 -= amount1;
       IERC20(token1).transfer(recipient, amount1);
     }
+  }
+
+  //////////////////////////////////////////////////////////////////////////////////////////
+  // Swap related
+  //////////////////////////////////////////////////////////////////////////////////////////
+
+  struct SwapCache {
+    // liquidity at the beginning of the swap
+    uint128 liquidityStart;
+  }
+
+  // the top level state of the swap, the results of which are recorded in storage at the end
+  struct SwapState {
+    // the amount remaining to be swapped in/out of the input/output asset
+    int256 amountSpecifiedRemaining;
+    // the amount already swapped out/in of the output/input asset
+    int256 amountCalculated;
+    // current sqrt(price)
+    uint160 sqrtPriceX96;
+    // the tick associated with the current price
+    int24 tick;
+    // the global fee growth of the input token
+    uint256 feeGrowthGlobalX128;
+    // amount of input token paid as protocol fee
+    uint128 protocolFee;
+    // the current liquidity in range
+    uint128 liquidity;
+  }
+
+  // one step in the swap computation
+  struct StepComputations {
+    // the price at the beginning of the step
+    uint160 sqrtPriceStartX96;
+    // the next tick to swap to from the current tick in the swap direction
+    int24 tickNext;
+    // whether tickNext is initialized or not
+    bool initialized;
+    // sqrt(price) for the next tick (1/0)
+    uint160 sqrtPriceNextX96;
+    // how much is being swapped in in this step
+    uint256 amountIn;
+    // how much is being swapped out
+    uint256 amountOut;
+    // how much fee is being paid in
+    uint256 feeAmount;
+  }
+
+  function swap(
+    address recipient,
+    bool zeroForOne,
+    int256 amountSpecified,
+    uint160 sqrtPriceLimitX96
+  ) external lock returns (int256 amount0, int256 amount1) {
+    require(amountSpecified != 0, 'AS');
+
+    Slot0 memory slot0Start = slot0;
+
+    require(slot0Start.unlocked, 'LOK');
+
+    // When it's zeroForOne, Price of token0 will decrease, and when it's not zeroForOne, Price of token1 will decrease.
+    require(
+      zeroForOne
+          ? sqrtPriceLimitX96 < slot0Start.sqrtPriceX96 && sqrtPriceLimitX96 > TickMath.MIN_SQRT_RATIO
+          : sqrtPriceLimitX96 > slot0Start.sqrtPriceX96 && sqrtPriceLimitX96 < TickMath.MAX_SQRT_RATIO,
+      'SPL'
+    );
+
+    slot0.unlocked = false;
+
+    SwapCache memory cache = 
+      SwapCache({
+        liquidityStart: liquidity
+      });
+    bool exactInput = amountSpecified > 0;
+
+    SwapState memory state = 
+      SwapState({
+        amountSpecifiedRemaining: amountSpecified,
+        amountCalculated: 0,
+        sqrtPriceX96: slot0Start.sqrtPriceX96,
+        tick: slot0Start.tick,
+        feeGrowthGlobalX128: zeroForOne ? feeGrowthGlobal0X128 : feeGrowthGlobal1X128,
+        protocolFee: 0,
+        liquidity: cache.liquidityStart // initially set to the liquidity at the beginning of the swap
+      });
+
+    while (state.amountSpecifiedRemaining != 0 && state.sqrtPriceX96 != sqrtPriceLimitX96) {
+      StepComputations memory step;
+
+      step.sqrtPriceStartX96 = state.sqrtPriceX96;
+
+      (step.tickNext, step.initialized) = tickBitmap.nextInitializedTickWithinOneWord(
+        state.tick,
+        tickSpacing,
+        zeroForOne
+      );
+
+      // ensure that we do not overshoot the min/max tick, as the tick bitmap is not aware of these bounds
+      if (step.tickNext < TickMath.MIN_TICK) {
+          step.tickNext = TickMath.MIN_TICK;
+      } else if (step.tickNext > TickMath.MAX_TICK) {
+          step.tickNext = TickMath.MAX_TICK;
+      }
+
+      // get the price for the next tick
+      step.sqrtPriceNextX96 = TickMath.getSqrtRatioAtTick(step.tickNext);
+
+      // compute values to swap to the target tick, price limit, or point where input/output amount is exhausted
+      (state.sqrtPriceX96, step.amountIn, step.amountOut, step.feeAmount) = SwapMath.computeSwapStep(
+        state.sqrtPriceX96,
+        (zeroForOne ? step.sqrtPriceNextX96 < sqrtPriceLimitX96 : step.sqrtPriceNextX96 > sqrtPriceLimitX96)
+          ? sqrtPriceLimitX96
+          : step.sqrtPriceNextX96,
+        state.liquidity,
+        state.amountSpecifiedRemaining,
+        fee
+      );
+
+      if (exactInput) {
+        state.amountSpecifiedRemaining -= int256(step.amountIn + step.feeAmount);
+        state.amountCalculated = state.amountCalculated - int256(step.amountOut);
+      } else {
+        state.amountSpecifiedRemaining += int256(step.amountOut);
+        state.amountCalculated += int256(step.amountIn + step.feeAmount);
+      }
+
+      // if the protocol fee is on, calculate how much is owed, decrement feeAmount, and increment protocolFee
+      // TODO: update later for feeProtocol
+
+      // update global fee tracker
+      if (state.liquidity > 0) {
+        state.feeGrowthGlobalX128 += FullMath.mulDiv(step.feeAmount, FixedPoint128.Q128, state.liquidity);
+      }
+
+      // shift tick if we reached the next price
+      if (state.sqrtPriceX96 == step.sqrtPriceNextX96) {
+        // if the tick is initialized, run the tick transition
+        if (step.initialized) {
+          // check for the placeholder value, which we replace with the actual value the first time the swap
+          // crosses an initialized tick. TODO: update later for computedLatestObservation
+
+          int128 liquidityNet =
+            ticks.cross(
+              step.tickNext,
+              (zeroForOne ? state.feeGrowthGlobalX128 : feeGrowthGlobal0X128),
+              (zeroForOne ? feeGrowthGlobal1X128 : state.feeGrowthGlobalX128)
+            );
+          
+          // if we're moving leftward, we interpret liquidityNet as the opposite sign
+          // safe because liquidityNet cannot be type(int128).min
+          if (zeroForOne) liquidityNet = -liquidityNet;
+
+          state.liquidity = LiquidityMath.addDelta(state.liquidity, liquidityNet);
+        }
+
+        // Update tick to reflect which range we're in after crossing
+        //
+        // Example: Two ranges [50, 100) liquidity=1000, [100, 150) liquidity=2000
+        //
+        // Scenario 1: Moving DOWN (zeroForOne = true)
+        //   - Before: tick 120, in [100, 150), liquidity = 2000
+        //   - Cross tick 100: liquidityNet[100] = +1000 (net of +2000 and -1000)
+        //   - With zeroForOne negation: apply -1000
+        //   - After: liquidity = 2000 - 1000 = 1000
+        //   - NOW in range [50, 100), need tick < 100
+        //   - Set: state.tick = 100 - 1 = 99 ✓
+        //
+        // Scenario 2: Moving UP (zeroForOne = false)
+        //   - Before: tick 80, in [50, 100), liquidity = 1000
+        //   - Cross tick 100: liquidityNet[100] = +1000
+        //   - After: liquidity = 1000 + 1000 = 2000
+        //   - NOW in range [100, 150), need tick >= 100
+        //   - Set: state.tick = 100 (no -1 needed) ✓
+        //
+        // The -1 ensures tick value matches which positions are actually active!
+        state.tick = zeroForOne ? step.tickNext - 1 : step.tickNext;
+      } else if (state.sqrtPriceX96 != step.sqrtPriceStartX96) {
+        // recompute unless we're on a lower tick boundary (i.e. already transitioned ticks), and haven't moved
+        state.tick = TickMath.getTickAtSqrtRatio(state.sqrtPriceX96);
+      }
+
+    }
+
+    if (state.tick != slot0Start.tick) {
+      // update tick and write an oracle entry if the tick change
+      (slot0.sqrtPriceX96, slot0.tick) = (state.sqrtPriceX96, state.tick);
+    } else {
+      // otherwise just update the price
+      slot0.sqrtPriceX96 = state.sqrtPriceX96;
+    }
+
+    // update liquidity if it changed
+    if (cache.liquidityStart != state.liquidity) liquidity = state.liquidity;
+
+    (amount0, amount1) = zeroForOne == exactInput
+            ? (amountSpecified - state.amountSpecifiedRemaining, state.amountCalculated)
+            : (state.amountCalculated, amountSpecified - state.amountSpecifiedRemaining);
+
+    // do the transfers and collect payment
+    if (zeroForOne) {
+      if (amount1 < 0) IERC20(token1).transfer(recipient, uint256(-amount1));
+    } else {
+      if (amount0 < 0) IERC20(token0).transfer(recipient, uint256(-amount0));
+    }
+
+    slot0.unlocked = true;
   }
 }

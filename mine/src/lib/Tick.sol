@@ -76,4 +76,21 @@ library Tick {
   function clear(mapping(int24 => Tick.Info) storage self, int24 tick) internal {
       delete self[tick];
   }
+
+  /// @notice Transitions to next tick as needed by price movement
+  /// @param self The mapping containing all tick information for initialized ticks
+  /// @param tick The destination tick of the transition
+  /// @return liquidityNet The amount of liquidity added (subtracted) when tick is crossed from left to right (right to left)
+  /// TODO: update later for computedLatestObservation
+  function cross(
+    mapping(int24 => Tick.Info) storage self,
+    int24 tick,
+    uint256 feeGrowthGlobal0X128,
+    uint256 feeGrowthGlobal1X128
+  ) internal returns (int128 liquidityNet) {
+    Tick.Info storage info = self[tick];
+    info.feeGrowthOutside0X128 = feeGrowthGlobal0X128 - info.feeGrowthOutside0X128;
+    info.feeGrowthOutside1X128 = feeGrowthGlobal1X128 - info.feeGrowthOutside1X128;
+    liquidityNet = info.liquidityNet;
+  }
 }
