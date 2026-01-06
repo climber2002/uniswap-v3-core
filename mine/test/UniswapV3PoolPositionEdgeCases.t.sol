@@ -6,7 +6,7 @@ import {UniswapV3Pool} from "../src/UniswapV3Pool.sol";
 import {TickMath} from "../src/lib/TickMath.sol";
 import {MockERC20} from "./mocks/MockERC20.sol";
 
-contract UniswapV3PoolEdgeCasesTest is Test {
+contract UniswapV3PoolPositionEdgeCasesTest is Test {
     UniswapV3Pool public pool;
     MockERC20 public token0;
     MockERC20 public token1;

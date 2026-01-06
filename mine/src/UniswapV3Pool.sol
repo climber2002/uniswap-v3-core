@@ -11,6 +11,7 @@ import "./lib/TickBitmap.sol";
 import "./lib/SwapMath.sol";
 import "./lib/FixedPoint128.sol";
 import "./lib/FullMath.sol";
+import "forge-std/console.sol";
 
 contract UniswapV3Pool {
   using Position for mapping(bytes32 => Position.Info);
@@ -226,7 +227,13 @@ contract UniswapV3Pool {
         maxLiquidityPerTick
       );
 
-      // TODO: Update tickBitmap
+      // Update tickBitmap when ticks are flipped
+      if (flippedLower) {
+        tickBitmap.flipTick(tickLower, tickSpacing);
+      }
+      if (flippedUpper) {
+        tickBitmap.flipTick(tickUpper, tickSpacing);
+      }
 
       // TODO: update feeGrowthInside0X128 position
 
@@ -373,8 +380,6 @@ contract UniswapV3Pool {
 
     Slot0 memory slot0Start = slot0;
 
-    require(slot0Start.unlocked, 'LOK');
-
     // When it's zeroForOne, Price of token0 will decrease, and when it's not zeroForOne, Price of token1 will decrease.
     require(
       zeroForOne
@@ -383,15 +388,13 @@ contract UniswapV3Pool {
       'SPL'
     );
 
-    slot0.unlocked = false;
-
     SwapCache memory cache = 
       SwapCache({
         liquidityStart: liquidity
       });
     bool exactInput = amountSpecified > 0;
 
-    SwapState memory state = 
+    SwapState memory state =
       SwapState({
         amountSpecifiedRemaining: amountSpecified,
         amountCalculated: 0,
@@ -402,7 +405,13 @@ contract UniswapV3Pool {
         liquidity: cache.liquidityStart // initially set to the liquidity at the beginning of the swap
       });
 
+    uint256 iterationCount = 0;
     while (state.amountSpecifiedRemaining != 0 && state.sqrtPriceX96 != sqrtPriceLimitX96) {
+      iterationCount++;
+      console.log("=== Iteration", iterationCount, "===");
+      console.log("Current tick:", state.tick);
+      console.log("Current liquidity:", state.liquidity);
+
       StepComputations memory step;
 
       step.sqrtPriceStartX96 = state.sqrtPriceX96;
@@ -412,6 +421,9 @@ contract UniswapV3Pool {
         tickSpacing,
         zeroForOne
       );
+
+      console.log("Next tick:", step.tickNext);
+      console.log("Initialized:", step.initialized);
 
       // ensure that we do not overshoot the min/max tick, as the tick bitmap is not aware of these bounds
       if (step.tickNext < TickMath.MIN_TICK) {
@@ -433,6 +445,10 @@ contract UniswapV3Pool {
         state.amountSpecifiedRemaining,
         fee
       );
+
+      console.log("Amount in:", step.amountIn);
+      console.log("Amount out:", step.amountOut);
+      console.log("New tick:", TickMath.getTickAtSqrtRatio(state.sqrtPriceX96));
 
       if (exactInput) {
         state.amountSpecifiedRemaining -= int256(step.amountIn + step.feeAmount);
@@ -499,6 +515,10 @@ contract UniswapV3Pool {
 
     }
 
+    console.log("\n==== SWAP COMPLETE ====");
+    console.log("Total iterations:", iterationCount);
+    console.log("Final tick:", state.tick);
+
     if (state.tick != slot0Start.tick) {
       // update tick and write an oracle entry if the tick change
       (slot0.sqrtPriceX96, slot0.tick) = (state.sqrtPriceX96, state.tick);
@@ -520,7 +540,6 @@ contract UniswapV3Pool {
     } else {
       if (amount0 < 0) IERC20(token0).transfer(recipient, uint256(-amount0));
     }
-
-    slot0.unlocked = true;
+    // Note: lock modifier handles unlocking automatically
   }
 }

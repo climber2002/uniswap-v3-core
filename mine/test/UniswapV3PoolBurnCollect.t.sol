@@ -72,18 +72,18 @@ contract UniswapV3PoolBurnCollectTest is Test {
         uint160 sqrtPriceX96 = encodePriceSqrt(1, 10);
         pool.initialize(sqrtPriceX96);
 
-        // Mint position
+        // Mint position (ticks must be multiples of tickSpacing = 60)
         vm.prank(user);
-        pool.mint(user, -24000, -22000, 100);
+        pool.mint(user, -24000, -22020, 100); // -22020 = -367 * 60
 
         // Check position before burn
-        bytes32 positionKey = keccak256(abi.encodePacked(user, int24(-24000), int24(-22000)));
+        bytes32 positionKey = keccak256(abi.encodePacked(user, int24(-24000), int24(-22020)));
         (uint128 liquidityBefore,,,,) = pool.positions(positionKey);
         assertEq(liquidityBefore, 100);
 
         // Burn half of the liquidity
         vm.prank(user);
-        pool.burn(-24000, -22000, 50);
+        pool.burn(-24000, -22020, 50);
 
         // Check position after burn
         (uint128 liquidityAfter,,,,) = pool.positions(positionKey);
@@ -97,11 +97,11 @@ contract UniswapV3PoolBurnCollectTest is Test {
 
         // Mint in-range position
         vm.prank(user);
-        (uint256 mintAmount0, uint256 mintAmount1) = pool.mint(user, -24000, -22000, 100);
+        (uint256 mintAmount0, uint256 mintAmount1) = pool.mint(user, -24000, -22020, 100);
 
         // Burn the position
         vm.prank(user);
-        (uint256 burnAmount0, uint256 burnAmount1) = pool.burn(-24000, -22000, 100);
+        (uint256 burnAmount0, uint256 burnAmount1) = pool.burn(-24000, -22020, 100);
 
         // Burned amounts should be close to minted amounts (rounding down protects the pool)
         // Mint rounds up (user pays more), burn rounds down (pool gives less)
@@ -163,14 +163,14 @@ contract UniswapV3PoolBurnCollectTest is Test {
 
         // Mint position
         vm.prank(user);
-        pool.mint(user, -24000, -22000, 100);
+        pool.mint(user, -24000, -22020, 100);
 
         // Burn the position
         vm.prank(user);
-        (uint256 burnAmount0, uint256 burnAmount1) = pool.burn(-24000, -22000, 100);
+        (uint256 burnAmount0, uint256 burnAmount1) = pool.burn(-24000, -22020, 100);
 
         // Check tokensOwed
-        bytes32 positionKey = keccak256(abi.encodePacked(user, int24(-24000), int24(-22000)));
+        bytes32 positionKey = keccak256(abi.encodePacked(user, int24(-24000), int24(-22020)));
         (,,, uint128 tokensOwed0, uint128 tokensOwed1) = pool.positions(positionKey);
 
         assertEq(tokensOwed0, burnAmount0, "tokensOwed0 should equal burn amount0");
@@ -184,18 +184,18 @@ contract UniswapV3PoolBurnCollectTest is Test {
 
         // Mint position
         vm.prank(user);
-        pool.mint(user, -24000, -22000, 100);
+        pool.mint(user, -24000, -22020, 100);
 
         // Burn half
         vm.prank(user);
-        (uint256 burn1Amount0, uint256 burn1Amount1) = pool.burn(-24000, -22000, 50);
+        (uint256 burn1Amount0, uint256 burn1Amount1) = pool.burn(-24000, -22020, 50);
 
         // Burn the other half
         vm.prank(user);
-        (uint256 burn2Amount0, uint256 burn2Amount1) = pool.burn(-24000, -22000, 50);
+        (uint256 burn2Amount0, uint256 burn2Amount1) = pool.burn(-24000, -22020, 50);
 
         // Check tokensOwed accumulated both burns
-        bytes32 positionKey = keccak256(abi.encodePacked(user, int24(-24000), int24(-22000)));
+        bytes32 positionKey = keccak256(abi.encodePacked(user, int24(-24000), int24(-22020)));
         (,,, uint128 tokensOwed0, uint128 tokensOwed1) = pool.positions(positionKey);
 
         assertEq(tokensOwed0, burn1Amount0 + burn2Amount0, "tokensOwed0 should accumulate");
@@ -274,14 +274,14 @@ contract UniswapV3PoolBurnCollectTest is Test {
 
         // Mint in-range position
         vm.prank(user);
-        pool.mint(user, -24000, -22000, 100);
+        pool.mint(user, -24000, -22020, 100);
 
         uint128 liquidityBefore = pool.liquidity();
         assertEq(liquidityBefore, 100);
 
         // Burn position
         vm.prank(user);
-        pool.burn(-24000, -22000, 100);
+        pool.burn(-24000, -22020, 100);
 
         uint128 liquidityAfter = pool.liquidity();
         assertEq(liquidityAfter, 0, "Pool liquidity should decrease for in-range burn");
@@ -316,10 +316,10 @@ contract UniswapV3PoolBurnCollectTest is Test {
 
         // Mint and burn to create tokensOwed
         vm.prank(user);
-        pool.mint(user, -24000, -22000, 100);
+        pool.mint(user, -24000, -22020, 100);
 
         vm.prank(user);
-        (uint256 burnAmount0, uint256 burnAmount1) = pool.burn(-24000, -22000, 100);
+        (uint256 burnAmount0, uint256 burnAmount1) = pool.burn(-24000, -22020, 100);
 
         uint256 recipientBalance0Before = token0.balanceOf(recipient);
         uint256 recipientBalance1Before = token1.balanceOf(recipient);
@@ -329,7 +329,7 @@ contract UniswapV3PoolBurnCollectTest is Test {
         (uint128 collected0, uint128 collected1) = pool.collect(
             recipient,
             -24000,
-            -22000,
+            -22020,
             type(uint128).max,
             type(uint128).max
         );
@@ -347,10 +347,10 @@ contract UniswapV3PoolBurnCollectTest is Test {
 
         // Mint and burn to create tokensOwed
         vm.prank(user);
-        pool.mint(user, -24000, -22000, 100);
+        pool.mint(user, -24000, -22020, 100);
 
         vm.prank(user);
-        (uint256 burnAmount0, uint256 burnAmount1) = pool.burn(-24000, -22000, 100);
+        (uint256 burnAmount0, uint256 burnAmount1) = pool.burn(-24000, -22020, 100);
 
         // Collect only half of each token
         uint128 requestAmount0 = uint128(burnAmount0 / 2);
@@ -360,7 +360,7 @@ contract UniswapV3PoolBurnCollectTest is Test {
         (uint128 collected0, uint128 collected1) = pool.collect(
             recipient,
             -24000,
-            -22000,
+            -22020,
             requestAmount0,
             requestAmount1
         );
@@ -376,17 +376,17 @@ contract UniswapV3PoolBurnCollectTest is Test {
 
         // Mint and burn to create tokensOwed
         vm.prank(user);
-        pool.mint(user, -24000, -22000, 100);
+        pool.mint(user, -24000, -22020, 100);
 
         vm.prank(user);
-        (uint256 burnAmount0, uint256 burnAmount1) = pool.burn(-24000, -22000, 100);
+        (uint256 burnAmount0, uint256 burnAmount1) = pool.burn(-24000, -22020, 100);
 
         // Collect tokens
         vm.prank(user);
-        pool.collect(recipient, -24000, -22000, type(uint128).max, type(uint128).max);
+        pool.collect(recipient, -24000, -22020, type(uint128).max, type(uint128).max);
 
         // Check tokensOwed are now zero
-        bytes32 positionKey = keccak256(abi.encodePacked(user, int24(-24000), int24(-22000)));
+        bytes32 positionKey = keccak256(abi.encodePacked(user, int24(-24000), int24(-22020)));
         (,,, uint128 tokensOwed0, uint128 tokensOwed1) = pool.positions(positionKey);
 
         assertEq(tokensOwed0, 0, "tokensOwed0 should be zero after collect");
@@ -400,10 +400,10 @@ contract UniswapV3PoolBurnCollectTest is Test {
 
         // Mint and burn to create tokensOwed
         vm.prank(user);
-        pool.mint(user, -24000, -22000, 100);
+        pool.mint(user, -24000, -22020, 100);
 
         vm.prank(user);
-        (uint256 burnAmount0, uint256 burnAmount1) = pool.burn(-24000, -22000, 100);
+        (uint256 burnAmount0, uint256 burnAmount1) = pool.burn(-24000, -22020, 100);
 
         // First collect - half
         uint128 halfAmount0 = uint128(burnAmount0 / 2);
@@ -413,7 +413,7 @@ contract UniswapV3PoolBurnCollectTest is Test {
         (uint128 collected1_0, uint128 collected1_1) = pool.collect(
             recipient,
             -24000,
-            -22000,
+            -22020,
             halfAmount0,
             halfAmount1
         );
@@ -426,7 +426,7 @@ contract UniswapV3PoolBurnCollectTest is Test {
         (uint128 collected2_0, uint128 collected2_1) = pool.collect(
             recipient,
             -24000,
-            -22000,
+            -22020,
             type(uint128).max,
             type(uint128).max
         );
@@ -435,7 +435,7 @@ contract UniswapV3PoolBurnCollectTest is Test {
         assertEq(collected2_1, burnAmount1 - halfAmount1, "Should collect remaining token1");
 
         // Verify all tokens have been collected
-        bytes32 positionKey = keccak256(abi.encodePacked(user, int24(-24000), int24(-22000)));
+        bytes32 positionKey = keccak256(abi.encodePacked(user, int24(-24000), int24(-22020)));
         (,,, uint128 tokensOwed0, uint128 tokensOwed1) = pool.positions(positionKey);
 
         assertEq(tokensOwed0, 0);
@@ -507,14 +507,14 @@ contract UniswapV3PoolBurnCollectTest is Test {
 
         // Mint position but don't burn
         vm.prank(user);
-        pool.mint(user, -24000, -22000, 100);
+        pool.mint(user, -24000, -22020, 100);
 
         // Try to collect (should return 0)
         vm.prank(user);
         (uint128 collected0, uint128 collected1) = pool.collect(
             recipient,
             -24000,
-            -22000,
+            -22020,
             type(uint128).max,
             type(uint128).max
         );
@@ -530,10 +530,10 @@ contract UniswapV3PoolBurnCollectTest is Test {
 
         // Mint and burn
         vm.prank(user);
-        pool.mint(user, -24000, -22000, 100);
+        pool.mint(user, -24000, -22020, 100);
 
         vm.prank(user);
-        (uint256 burnAmount0, uint256 burnAmount1) = pool.burn(-24000, -22000, 100);
+        (uint256 burnAmount0, uint256 burnAmount1) = pool.burn(-24000, -22020, 100);
 
         uint256 userBalance0Before = token0.balanceOf(user);
         uint256 userBalance1Before = token1.balanceOf(user);
@@ -543,7 +543,7 @@ contract UniswapV3PoolBurnCollectTest is Test {
         (uint128 collected0, uint128 collected1) = pool.collect(
             user,
             -24000,
-            -22000,
+            -22020,
             type(uint128).max,
             type(uint128).max
         );

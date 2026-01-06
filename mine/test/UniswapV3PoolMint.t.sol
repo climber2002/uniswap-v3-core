@@ -141,7 +141,7 @@ contract UniswapV3PoolMintTest is Test {
         // Mint including current price (current tick ≈ -23028, mint around it)
         // This should require both tokens
         vm.prank(user);
-        (uint256 amount0, uint256 amount1) = pool.mint(user, -24000, -22000, 100);
+        (uint256 amount0, uint256 amount1) = pool.mint(user, -24000, -22020, 100);
 
         // Should transfer both tokens
         assertGt(amount0, 0, "Should require token0");
@@ -157,7 +157,7 @@ contract UniswapV3PoolMintTest is Test {
         pool.initialize(sqrtPriceX96);
 
         int24 testTickLower = -24000;
-        int24 testTickUpper = -22000;
+        int24 testTickUpper = -22020;
 
         vm.prank(user);
         pool.mint(user, testTickLower, testTickUpper, 100);
@@ -173,7 +173,7 @@ contract UniswapV3PoolMintTest is Test {
         pool.initialize(sqrtPriceX96);
 
         int24 testTickLower = -24000;
-        int24 testTickUpper = -22000;
+        int24 testTickUpper = -22020;
 
         vm.prank(user);
         pool.mint(user, testTickLower, testTickUpper, 100);
@@ -220,7 +220,7 @@ contract UniswapV3PoolMintTest is Test {
 
         // Mint in range (current tick ≈ -23028, mint around it)
         vm.prank(user);
-        pool.mint(user, -24000, -22000, 100);
+        pool.mint(user, -24000, -22020, 100);
 
         uint128 liquidityAfter = pool.liquidity();
 
